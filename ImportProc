@@ -128,22 +128,22 @@ If IsNull(@Debug, 'N') = 'N'
 				,ImportedDocumentId		
 			)
 			Select	
-				 ID
-				,Dur_Converted			
-				,WD_Converted
-				,PN
-				,Country
-				,BM_Convereted
-				,SVT
-				,Atr
-				,DT
-				,Title
-				,Series_MovieName
-				,Season
-				,EpisodeName
-				,ImportedDocumentId
-			From	#RawData
-			Where Not Exists ( Select 1 From dbo.NetflixVA_Client (NoLock) Where dbo.NetflixVA_Client.ImportedDocumentId = @ImportedDocumentId)
+				 R.ID
+				,R.Dur_Converted			
+				,R.WD_Converted
+				,R.PN
+				,R.Country
+				,R.BM_Convereted
+				,R.SVT
+				,R.Atr
+				,R.DT
+				,R.Title
+				,R.Series_MovieName
+				,R.Season
+				,R.EpisodeName
+				,R.ImportedDocumentId
+			From	#RawData R
+			Where Not Exists ( Select 1 From dbo.NetflixVA_Client (NoLock) C Where C.ImportedDocumentId = @ImportedDocumentId And C.ID = R.ID)
 		'
 		EXEC sp_executesql @Sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
 	End
