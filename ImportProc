@@ -1,0 +1,144 @@
+USE [CASDataWarehouse]
+GO
+/****** Object:  StoredProcedure [dbo].[spImport_NetflixVA_Client]    Script Date: 8/4/2025 3:24:19 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+CREATE Procedure [dbo].[spImport_ViewingActivity_Client]	
+							@ImportedDocumentId			UniqueIdentifier	= null,
+							@Debug						Char(1)				= 'N',
+							@CasinoInsightDatabaseName	VarChar(100)		= Null,
+							@RetrieveCoreCodeOnly		BIT					= 0
+							
+as
+set nocount on
+Declare @Sql nvarchar(max)
+
+ -- 4.6 or later passes @CasinoInsightDatabaseName automatically so we don't need to loop anymore
+
+BEGIN
+
+Set Nocount On
+
+-- Update raw data with ImportedDocumentId
+if IsNull(@Debug, 'N') = 'N'
+	Update	NetflixVA_Raw_Client
+	Set	ImportedDocumentId = @ImportedDocumentId
+	Where	ImportedDocumentId Is Null
+
+
+-- Create temp table (#RawData) matching the NetflixVA_Raw_Client import table
+Select	ID
+		,Dur			
+		,WD			
+		,PN			
+		,Country			
+		,BM			
+		,LBM					
+		,SVT				
+		,Atr					
+		,DT				
+		,Title
+		,CONVERT(time,NULL)				Dur_Converted
+		,CONVERT(datetime,NULL)			WD_Converted
+		,CONVERT(time,NULL)				BM_Convereted
+		,CAST(NULL AS varchar(100))		Series_MovieName
+		,CAST(NULL AS varchar(100))		Season
+		,CAST(NULL AS varchar(100))		EpisodeName
+		,ImportedDocumentId
+Into	#RawData
+From	NetflixVA_Raw_Client
+Where	NetflixVA_Raw_Client.ImportedDocumentId = @ImportedDocumentId
+
+---------------------------------------------------------------------------
+-- update convereted columns
+---------------------------------------------------------------------------
+Update #RawData
+Set Dur_Converted				=			CONVERT(time, Dur)	
+Update #RawData
+Set WD_Converted				=			CONVERT(datetime, WD)		
+Update #RawData
+Set BM_Convereted				=			CONVERT(time, BM)
+
+----------------------------------------------------------------------------------------
+-- split title name into series/movie, season, and episode based on ':' delimiter
+----------------------------------------------------------------------------------------
+Update #RawData
+Set Series_MovieName	=	CASE
+								WHEN CHARINDEX(':', Title) > 0
+								THEN LTRIM(RTRIM(LEFT(Title,CHARINDEX(':',Title) - 1)))
+								ELSE LTRIM(RTRIM(Title))
+							END
+Update #RawData
+Set Season				=	CASE
+								WHEN LEN(Title) - LEN(REPLACE(Title, ':', '')) >= 2 -- two colons used
+								THEN LTRIM(RTRIM(SUBSTRING(Title,CHARINDEX(':', Title) + 1,CHARINDEX(':', Title, CHARINDEX(':', Title) + 1) - CHARINDEX(':', Title) - 1)))
+								WHEN CHARINDEX(':', Title) > 0 AND LEN(Title) - LEN(REPLACE(Title, ':', '')) = 1
+								THEN LTRIM(RTRIM(SUBSTRING(Title,CHARINDEX(':', Title) + 1, LEN(Title))))
+								ELSE NULL
+							END
+Update #RawData
+Set EpisodeName			=	CASE
+								WHEN LEN(Title) - LEN(REPLACE(Title, ':', '')) >= 2
+								THEN LTRIM(RTRIM(SUBSTRING(Title,CHARINDEX(':', Title, CHARINDEX(':', Title) + 1) + 1, LEN(Title))))
+								ELSE NULL
+							END
+
+
+-- update ImportedDocument Set RowsInserted = 0 Where SourceTableId = 144
+if IsNull(@Debug, 'N') = 'N'
+	select @Sql = N'Update	'+@CasinoInsightDatabaseName+'..ImportedDocument
+	Set	RowsInserted = ( Select Count(1) From #RawData  )
+	Where	ImportedDocument.Id = @ImportedDocumentId
+	'
+execute sp_executeSQL @sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
+
+
+-- Insert into NetflixVA_Client with all required columns
+If IsNull(@Debug, 'N') = 'N'
+	Insert NetflixVA_Client
+	(	
+		ID
+		,Duration				
+		,WatchDate				
+		,ProfileName				
+		,Country						
+		,Bookmark						
+		,SupplementalVideoType	
+		,Attributes				
+		,DeviceType				
+		,Title
+		,Series_MovieName
+		,Season
+		,EpisodeName
+		,ImportedDocumentId		
+	)
+	Select	
+		 ID
+		,Dur_Converted			
+		,WD_Converted
+		,PN
+		,Country
+		,BM_Convereted
+		,SVT
+		,Atr
+		,DT
+		,Title
+		,Series_MovieName
+		,Season
+		,EpisodeName
+		,ImportedDocumentId
+	From	#RawData
+	Where Not Exists ( Select 1 From NetflixVA_Client (NoLock) Where NetflixVA_Client.ImportedDocumentId = @ImportedDocumentId)
+Else
+	Select * From NetflixVA_Client
+
+--SET IDENTITY_INSERT CreditCardCashAdvanceCashClub OFF
+
+End
+
+--get rid of any temp table abominations that have been created
+Drop Table #RawData
