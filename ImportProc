@@ -99,41 +99,54 @@ execute sp_executeSQL @sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDo
 
 
 -- Insert into NetflixVA_Client with all required columns
+-- Ensure target table has required split columns
+IF COL_LENGTH('dbo.NetflixVA_Client','Series Name') IS NULL
+	ALTER TABLE dbo.NetflixVA_Client ADD [Series Name] varchar(100) NULL
+IF COL_LENGTH('dbo.NetflixVA_Client','Season') IS NULL
+	ALTER TABLE dbo.NetflixVA_Client ADD [Season] varchar(100) NULL
+IF COL_LENGTH('dbo.NetflixVA_Client','Episode') IS NULL
+	ALTER TABLE dbo.NetflixVA_Client ADD [Episode] varchar(100) NULL
+
 If IsNull(@Debug, 'N') = 'N'
-	Insert NetflixVA_Client
-	(	
-		ID
-		,Duration				
-		,WatchDate				
-		,ProfileName				
-		,Country						
-		,Bookmark						
-		,SupplementalVideoType	
-		,Attributes				
-		,DeviceType				
-		,Title
-		,Series_MovieName
-		,Season
-		,EpisodeName
-		,ImportedDocumentId		
-	)
-	Select	
-		 ID
-		,Dur_Converted			
-		,WD_Converted
-		,PN
-		,Country
-		,BM_Convereted
-		,SVT
-		,Atr
-		,DT
-		,Title
-		,Series_MovieName
-		,Season
-		,EpisodeName
-		,ImportedDocumentId
-	From	#RawData
-	Where Not Exists ( Select 1 From NetflixVA_Client (NoLock) Where NetflixVA_Client.ImportedDocumentId = @ImportedDocumentId)
+	Begin
+		Select @Sql = N'
+			Insert dbo.NetflixVA_Client
+			(
+				ID
+				,Duration				
+				,WatchDate				
+				,ProfileName				
+				,Country						
+				,Bookmark						
+				,SupplementalVideoType	
+				,Attributes				
+				,DeviceType				
+				,Title
+				,[Series Name]
+				,[Season]
+				,[Episode]
+				,ImportedDocumentId		
+			)
+			Select	
+				 ID
+				,Dur_Converted			
+				,WD_Converted
+				,PN
+				,Country
+				,BM_Convereted
+				,SVT
+				,Atr
+				,DT
+				,Title
+				,Series_MovieName
+				,Season
+				,EpisodeName
+				,ImportedDocumentId
+			From	#RawData
+			Where Not Exists ( Select 1 From dbo.NetflixVA_Client (NoLock) Where dbo.NetflixVA_Client.ImportedDocumentId = @ImportedDocumentId)
+		'
+		EXEC sp_executesql @Sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
+	End
 Else
 	Select * From NetflixVA_Client
 
