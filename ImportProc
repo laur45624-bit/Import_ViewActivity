@@ -52,6 +52,7 @@ Select	ID
 Into	#RawData
 From	NetflixVA_Raw_Client
 Where	NetflixVA_Raw_Client.ImportedDocumentId = @ImportedDocumentId
+And	Title Not Like '%[_]%'
 
 ---------------------------------------------------------------------------
 -- update convereted columns
