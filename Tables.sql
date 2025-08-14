@@ -12,9 +12,7 @@ ALTER TABLE ADD only for missing columns.
 */
 
 -- Create raw import table if it does not exist
-IF NOT EXISTS (
-	SELECT 1 FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id
-	WHERE t.name = 'NetflixVA_Raw_Client' AND s.name = 'dbo')
+IF OBJECT_ID('dbo.NetflixVA_Raw_Client','U') IS NULL
 BEGIN
 	CREATE TABLE dbo.NetflixVA_Raw_Client
 	(
@@ -35,9 +33,7 @@ BEGIN
 END;
 
 -- Create client table if it does not exist
-IF NOT EXISTS (
-	SELECT 1 FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id
-	WHERE t.name = 'NetflixVA_Client' AND s.name = 'dbo')
+IF OBJECT_ID('dbo.NetflixVA_Client','U') IS NULL
 BEGIN
 	CREATE TABLE dbo.NetflixVA_Client
 	(
