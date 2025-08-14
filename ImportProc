@@ -145,9 +145,20 @@ If IsNull(@Debug, 'N') = 'N'
 			From	#RawData R
 			Where Not Exists ( Select 1 From dbo.NetflixVA_Client (NoLock) C Where C.ImportedDocumentId = @ImportedDocumentId And C.ID = R.ID)
 		'
-		EXEC sp_executesql @Sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
-	End
-Else
+				EXEC sp_executesql @Sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
+
+		-- Backfill legacy columns for compatibility
+		IF COL_LENGTH('dbo.NetflixVA_Client','Series_MovieName') IS NOT NULL
+			UPDATE C SET C.Series_MovieName = C.[Series Name]
+			FROM dbo.NetflixVA_Client C
+			WHERE C.ImportedDocumentId = @ImportedDocumentId
+		IF COL_LENGTH('dbo.NetflixVA_Client','EpisodeName') IS NOT NULL
+			UPDATE C SET C.EpisodeName = C.[Episode]
+			FROM dbo.NetflixVA_Client C
+			WHERE C.ImportedDocumentId = @ImportedDocumentId
+
+		End
+	Else
 	Select * From NetflixVA_Client
 
 --SET IDENTITY_INSERT CreditCardCashAdvanceCashClub OFF
