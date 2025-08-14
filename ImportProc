@@ -14,6 +14,21 @@ CREATE Procedure [dbo].[spImport_ViewingActivity_Client]
 							@RetrieveCoreCodeOnly		BIT					= 0
 							
 as
+/*
+Change summary (2025-08-04):
+- Split Title into three parts using ':' into Series (Series_MovieName), Season, and Episode (EpisodeName).
+- Exclude any rows where Title contains underscores using Title NOT LIKE '%[_]%'.
+- Convert raw Dur/WD/BM to proper time/datetime typed columns before insert.
+- Ensure destination table has [Series Name], [Season], [Episode] columns, adding them if missing.
+- Use parameterized dynamic SQL for inserts to decouple compile-time from schema changes and support staged deployments.
+- Correlate NOT EXISTS by ImportedDocumentId and ID to avoid blocking inserts for an entire document.
+- Backfill legacy columns (Series_MovieName, EpisodeName) from new columns for compatibility.
+
+Why dynamic SQL here:
+- Parameterized sp_executesql prevents injection and allows plan reuse.
+- Avoids compile-time binding errors when deploying to environments where new columns may not yet exist.
+- Required when targeting variable database names (also used below for ImportedDocument update).
+*/
 set nocount on
 Declare @Sql nvarchar(max)
 
@@ -30,7 +45,7 @@ if IsNull(@Debug, 'N') = 'N'
 	Where	ImportedDocumentId Is Null
 
 
--- Create temp table (#RawData) matching the NetflixVA_Raw_Client import table
+-- Create temp table (#RawData) to strongly type and stage rows for deterministic conversions and de-duplication
 Select	ID
 		,Dur			
 		,WD			
@@ -52,10 +67,12 @@ Select	ID
 Into	#RawData
 From	NetflixVA_Raw_Client
 Where	NetflixVA_Raw_Client.ImportedDocumentId = @ImportedDocumentId
+-- Exclude titles with underscores (per requirement); escape pattern uses [_] to match literal underscore
 And	Title Not Like '%[_]%'
 
 ---------------------------------------------------------------------------
--- update convereted columns
+-- Normalize raw string columns into typed columns for consistent downstream usage
+-- (time/datetime), isolating parsing issues before insert
 ---------------------------------------------------------------------------
 Update #RawData
 Set Dur_Converted				=			CONVERT(time, Dur)	
@@ -65,7 +82,13 @@ Update #RawData
 Set BM_Convereted				=			CONVERT(time, BM)
 
 ----------------------------------------------------------------------------------------
--- split title name into series/movie, season, and episode based on ':' delimiter
+-- Title parsing strategy
+-- Split Title into three parts using ':' delimiter:
+--   1) Series_MovieName: text before first ':' (or entire Title if no ':')
+--   2) Season: text between first and second ':' when two colons present;
+--      when a single colon exists, store the remainder in Season and leave EpisodeName NULL.
+--   3) EpisodeName: text after the second ':' when two colons are present; else NULL
+-- All parts are LTRIM/RTRIM trimmed to remove whitespace.
 ----------------------------------------------------------------------------------------
 Update #RawData
 Set Series_MovieName	=	CASE
@@ -107,6 +130,11 @@ IF COL_LENGTH('dbo.NetflixVA_Client','Season') IS NULL
 IF COL_LENGTH('dbo.NetflixVA_Client','Episode') IS NULL
 	ALTER TABLE dbo.NetflixVA_Client ADD [Episode] varchar(100) NULL
 
+-- Rationale for dynamic SQL here:
+-- - Parameterized sp_executesql avoids injection and enables plan reuse.
+-- - Decouples compile-time from runtime schema so deployments across environments
+--   (where new columns may be added later) won’t break the proc compilation.
+-- - Keeps the insert resilient when toggling between legacy and new column sets.
 If IsNull(@Debug, 'N') = 'N'
 	Begin
 		Select @Sql = N'
@@ -145,7 +173,7 @@ If IsNull(@Debug, 'N') = 'N'
 			From	#RawData R
 			Where Not Exists ( Select 1 From dbo.NetflixVA_Client (NoLock) C Where C.ImportedDocumentId = @ImportedDocumentId And C.ID = R.ID)
 		'
-				EXEC sp_executesql @Sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
+		EXEC sp_executesql @Sql, N'@ImportedDocumentId UniqueIdentifier', @ImportedDocumentId
 
 		-- Backfill legacy columns for compatibility
 		IF COL_LENGTH('dbo.NetflixVA_Client','Series_MovieName') IS NOT NULL
@@ -158,7 +186,7 @@ If IsNull(@Debug, 'N') = 'N'
 			WHERE C.ImportedDocumentId = @ImportedDocumentId
 
 		End
-	Else
+Else
 	Select * From NetflixVA_Client
 
 --SET IDENTITY_INSERT CreditCardCashAdvanceCashClub OFF
