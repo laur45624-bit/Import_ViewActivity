@@ -70,15 +70,3 @@ IF COL_LENGTH('dbo.NetflixVA_Client','Series_MovieName') IS NULL
 IF COL_LENGTH('dbo.NetflixVA_Client','EpisodeName') IS NULL
 	ALTER TABLE dbo.NetflixVA_Client ADD EpisodeName varchar(100) NULL;
 
--- Ensure composite PK exists (ID, ImportedDocumentId)
-IF NOT EXISTS (
-	SELECT 1 FROM sys.key_constraints kc
-	JOIN sys.indexes i ON kc.parent_object_id = i.object_id AND kc.unique_index_id = i.index_id
-	WHERE kc.parent_object_id = OBJECT_ID('dbo.NetflixVA_Client')
-	  AND kc.[type] = 'PK'
-	  AND i.is_unique = 1)
-BEGIN
-	-- If a different PK exists, you may need to drop it first in your environment.
-	-- Here we skip changing existing PKs to avoid destructive changes in idempotent script.
-	PRINT 'Primary key check: existing PK retained.';
-END;
